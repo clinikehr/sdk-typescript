@@ -1,0 +1,64 @@
+{
+  "name": "@clinikehr/api",
+  "version": "0.1.0",
+  "description": "Server-side TypeScript SDK for the ClinikEHR API (api.clinikehr.com): typed paths generated from the OpenAPI document, retries, idempotency keys, cursor pagination and webhook verification.",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/clinikehr/sdk-typescript.git"
+  },
+  "homepage": "https://docs.clinikehr.com",
+  "keywords": [
+    "clinikehr",
+    "ehr",
+    "healthcare",
+    "hipaa",
+    "sdk",
+    "fhir",
+    "clinical-data",
+    "openapi"
+  ],
+  "sideEffects": false,
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --sourcemap --clean",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "author": "Bettar Platforms, Inc.",
+  "dependencies": {
+    "openapi-fetch": "0.13.5"
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.9.1",
+    "tsup": "8.3.5",
+    "typescript": "5.7.3",
+    "vitest": "2.1.9"
+  },
+  "bugs": {
+    "url": "https://github.com/clinikehr/sdk-typescript/issues"
+  }
+}
