@@ -1,8 +1,23 @@
-import createOpenapiFetchClient, { type Client as OpenapiFetchClient } from "openapi-fetch";
+import * as openapiFetch from "openapi-fetch";
+import type { Client as OpenapiFetchClient } from "openapi-fetch";
 
 import { assertServerEnvironment } from "./browser-guard.js";
 import { ClinikEHRApiError, TransportError, isProblemBody, type ProblemBody } from "./errors.js";
 import { DEFAULT_RETRY_OPTIONS, decideRetry, type RetryPolicyOptions } from "./retry.js";
+
+// openapi-fetch's factory is its DEFAULT export. In the ESM build that is the function. In the
+// CommonJS build the bundler converts this package's imports in node mode, where `default` is
+// openapi-fetch's whole `module.exports`, and the function sits one level down. 0.1.0-0.1.2
+// imported the default directly, so `require("@clinikehr/api")` threw on every createClient().
+// Resolve it once, whichever shape arrived.
+type OpenapiFetchFactory = typeof openapiFetch.default;
+const createOpenapiFetchClient: OpenapiFetchFactory = (() => {
+  const d = (openapiFetch as unknown as { default?: unknown }).default;
+  if (typeof d === "function") return d as OpenapiFetchFactory;
+  const nested = (d as { default?: unknown } | undefined)?.default;
+  if (typeof nested === "function") return nested as OpenapiFetchFactory;
+  throw new Error("@clinikehr/api: could not load openapi-fetch");
+})();
 import type { paths } from "./generated/schema.js";
 
 export type { paths } from "./generated/schema.js";
@@ -26,7 +41,7 @@ export interface CallOptions {
   body?: unknown;
   /** Overrides the client-level `fhir` setting for this one call. */
   fhir?: boolean;
-  /** Supply your own idempotency key (e.g. to guarantee two logical retries of YOUR OWN, at a higher level, share one) — otherwise one is generated per call and reused across THIS client's own internal retries automatically. */
+  /** Supply your own idempotency key (e.g. to guarantee two logical retries of YOUR OWN, at a higher level, share one). POST and PATCH generate one per call when you don't, reused across THIS client's own internal retries; DELETE sends one only when you pass it; GET never does. */
   idempotencyKey?: string;
   signal?: AbortSignal;
 }
@@ -75,7 +90,16 @@ export function createClient(config: ClinikEHRClientConfig): ClinikEHRClient {
 
   async function call(method: "GET" | "POST" | "PATCH" | "DELETE", path: string, options: CallOptions = {}): Promise<unknown> {
     const wantsFhir = options.fhir ?? config.fhir ?? false;
-    const idempotencyKey = method === "POST" ? options.idempotencyKey ?? crypto.randomUUID() : undefined;
+    // POST and PATCH always carry a key (several PATCH routes require one, and a
+    // fresh key per call changes nothing for the routes where it is optional);
+    // DELETE carries one only when the caller supplies it. PATCH is still never
+    // retried — see retry.ts.
+    const idempotencyKey =
+      method === "POST" || method === "PATCH"
+        ? options.idempotencyKey ?? crypto.randomUUID()
+        : method === "DELETE"
+          ? options.idempotencyKey
+          : undefined;
 
     const headers: Record<string, string> = {};
     if (wantsFhir) {

@@ -628,7 +628,7 @@ export interface paths {
         put?: never;
         /**
          * Create a DRAFT note. Always status=draft — this route can never sign, lock, finalize or co-sign.
-         * @description Unknown content keys are refused (unknown_field) naming both the offending keys and the full valid list for whichever template note_type/custom_template_id resolves to. The answer carries the new note's details with `content: null`; read the note with `GET …/notes/{note_id}` to see its content.
+         * @description Unknown content keys are refused (unknown_field) naming both the offending keys and the full valid list for whichever template note_type/custom_template_id resolves to. The answer is the full note, the same object `GET …/notes/{note_id}` returns: its details plus `content` and `citations`. A citation's `url`, when given, must be an `http://` or `https://` address; anything else is refused with a 400 naming `/citations/N/url`.
          */
         post: operations["createNote"];
         delete?: never;
@@ -656,7 +656,7 @@ export interface paths {
         head?: never;
         /**
          * Update a draft this key created, if no clinician has touched it since.
-         * @description Refused note_not_editable if the note is signed/locked/finalized or a clinician saved it since this key's own last write. The answer carries the note's details with `content: null`; read the note with `GET …/notes/{note_id}` to see its content.
+         * @description Refused note_not_editable if the note is signed/locked/finalized or a clinician saved it since this key's own last write. The answer is the full note, the same object `GET …/notes/{note_id}` returns: its details plus the new `content` and the note's `citations`.
          */
         patch: operations["updateNote"];
         trace?: never;
@@ -812,7 +812,7 @@ export interface paths {
         head?: never;
         /**
          * Reschedule or update an appointment. Immutable after create — patient_id, service_id, location_id, every payment field — are refused if sent.
-         * @description A new `start_at` or `clinician_id` is checked exactly as a new booking is (the slot must be free and the clinician bookable). Other fields are plain edits; an absent field is unchanged. `status` may only move to `confirmed` here; use the cancel route to cancel. A cancelled, completed or no-show appointment cannot be changed. With a test key, rescheduling is not available: cancel the sandbox appointment and book a new one.
+         * @description A new `start_at` or `clinician_id` is checked exactly as a new booking is (the slot must be free and the clinician bookable). Other fields are plain edits; an absent field is unchanged. `status` may only move to `confirmed` here; use the cancel route to cancel. A cancelled, completed or no-show appointment cannot be changed. With a test key the same edits work on the sandbox's fictional appointments, including a new time; a sandbox time is in UTC, and a slot that overlaps that clinician's other sandbox appointments is refused with `slot_taken`.
          *
          *     Who is told. For a live (non-test) appointment that is still booked and in the future, changing `start_at`, `clinician_id` or `venue_type` emails the patient and any participants: a new time is a reschedule notice, a new clinician or venue is an "Appointment updated" notice. The clinicians involved are told in the app and by email: the new clinician that a visit was added, the previous clinician that it was removed, or the current clinician that it moved. This follows the clinic's appointment notification setting and each clinician's own email setting. With `email_notifications` false on the appointment the patient is not emailed, but the clinicians still are. Each later change sends its own notice, and the patient's reminder is re-armed for the new time. Test-key appointments never send email.
          */
@@ -1001,7 +1001,7 @@ export interface paths {
         };
         /**
          * The clinic's own change feed — catch-up for a partner whose webhook endpoint was down.
-         * @description Authorizes via the same scope-less /v1/me shape; filters to event types whose required_scope the key's CURRENT scopes cover.
+         * @description Needs no scope of its own: any valid key that can reach the clinic may read the feed. The feed is filtered to event types whose required_scope the key's CURRENT scopes cover.
          */
         get: operations["listEvents"];
         put?: never;
@@ -1249,7 +1249,7 @@ export interface paths {
         };
         /**
          * List one patient's prescriptions (read only).
-         * @description `patient_id` is required. Prescriptions are read only and minimal: the drug, the dose, the frequency, the status and when it was written, with `source` telling a prescription sent through the clinic's e-prescribing connection (`eprescribe`) from one written in the clinic (`clinic`). There is no route to create or change a prescription. `status` filters by the prescription's status. A restricted patient's prescriptions, and any the clinic has marked sensitive, are never returned. With `Accept: application/fhir+json` the answer is a searchset Bundle of FHIR R4 MedicationRequest resources.
+         * @description `patient_id` is required. Prescriptions are read only and minimal: the drug, the dose, the frequency, the status and when it was written, with `source` telling a prescription sent through the clinic's e-prescribing connection (`eprescribe`) from one written in the clinic (`clinic`). A prescription that exists only in the clinic's e-prescribing service is listed for the clinic's own keys only, never for an organization's key. There is no route to create or change a prescription. `status` filters by the prescription's status. A restricted patient's prescriptions, and any the clinic has marked sensitive, are never returned. With `Accept: application/fhir+json` the answer is a searchset Bundle of FHIR R4 MedicationRequest resources.
          */
         get: operations["listPrescriptions"];
         put?: never;
@@ -1574,6 +1574,238 @@ export interface paths {
          * @description Answers 200 with the encounter. Changes the visit's class, start, end or reason, and only on a draft the SAME key opened that no clinician has edited since: a signed, locked or clinician-edited visit is refused with 409 `note_not_editable`, and a visit opened by anyone else is a 404. It never changes note text and never signs, locks or finalizes. The `Idempotency-Key` header is optional. Send JSON; a FHIR Encounter body is refused.
          */
         patch: operations["updateEncounter"];
+        trace?: never;
+    };
+    "/v1/clinics/{clinic_id}/insurance/enrollees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the enrollees of your insurer.
+         * @description For an organization the clinic linked to an insurer: that insurer's enrollees at this clinic. To verify an enrollee, send `insurance_no` (it also matches the alternate number). A clinic-owned key sees every insurer's enrollees. An organization with no insurer link is refused (`hmo_not_linked`); a clinic on the US insurance setup is refused (`insurance_region_unsupported`). A restricted patient's enrollee record is never returned.
+         */
+        get: operations["listInsuranceEnrollees"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clinics/{clinic_id}/insurance/enrollees/{enrollee_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one enrollee.
+         * @description An enrollee of another insurer, an absent one and a restricted patient's are the same 404.
+         */
+        get: operations["getInsuranceEnrollee"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clinics/{clinic_id}/insurance/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List your insurer's plans.
+         * @description The plans of the insurer the clinic linked to your organization (every insurer for a clinic-owned key). Benefits are on the single-plan read.
+         */
+        get: operations["listInsurancePlans"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clinics/{clinic_id}/insurance/plans/{plan_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one plan with its benefits.
+         * @description Returns the plan and up to 500 benefit lines.
+         */
+        get: operations["getInsurancePlan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clinics/{clinic_id}/insurance/claims": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List claims submitted to your insurer.
+         * @description For an organization the clinic linked to an insurer: that insurer's claims that the clinic has submitted. Claims still in the clinic's draft stages are never shown to an insurer. A clinic-owned key sees all of its clinic's claims. Lines, diagnoses and documents are on the single-claim read.
+         */
+        get: operations["listInsuranceClaims"];
+        put?: never;
+        /**
+         * Submit a claim to one of the clinic's insurers.
+         * @description For a clinic-owned key, or an organization with NO insurer link (a developer). An organization linked to an insurer is refused (`role_required`): an insurer does not submit claims to itself. The claim is saved as `submitted`, answers 201 with the claim and its lines, and carries no money. The `Idempotency-Key` header is REQUIRED - a retry with the same key returns the original claim, never a second one.
+         */
+        post: operations["submitInsuranceClaim"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clinics/{clinic_id}/insurance/claims/{claim_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one claim with its lines.
+         * @description Includes `items` (billed and approved figures per line), `diagnoses` and `documents` (metadata only). A claim of another insurer, a draft and a restricted patient's claim are the same 404.
+         */
+        get: operations["getInsuranceClaim"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clinics/{clinic_id}/insurance/claims/{claim_id}/adjudication": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Vet a claim.
+         * @description Approve, adjust or decline lines of a claim of the insurer the clinic linked to your organization. See the request body for how `decision` and `items` combine. Answers 200 with the claim. It never moves money: a claim the clinic has already recorded a payment or write-off against answers 409 `invalid_status_transition`. A clinic-owned key and an organization with no insurer link are refused (`hmo_not_linked`). The `Idempotency-Key` header is REQUIRED.
+         */
+        post: operations["adjudicateInsuranceClaim"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clinics/{clinic_id}/insurance/pre-authorizations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List pre-authorization requests sent to your insurer.
+         * @description Requests the clinic has sent for authorization (and their outcome). Requests still in the clinic's draft or review stages are never shown to an insurer. A clinic-owned key sees all of its clinic's requests.
+         */
+        get: operations["listInsurancePreAuthorizations"];
+        put?: never;
+        /**
+         * Send a pre-authorization request to one of the clinic's insurers.
+         * @description For a clinic-owned key, or an organization with NO insurer link. Saved as `sent_for_authorization`; answers 201 with the request. The `Idempotency-Key` header is REQUIRED.
+         */
+        post: operations["submitInsurancePreAuthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clinics/{clinic_id}/insurance/pre-authorizations/{pa_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get one pre-authorization request with its lines.
+         * @description A request of another insurer, an unsent one and a restricted patient's are the same 404.
+         */
+        get: operations["getInsurancePreAuthorization"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clinics/{clinic_id}/insurance/pre-authorizations/{pa_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve or deny a pre-authorization request.
+         * @description For the insurer the clinic linked to your organization. Only a request that is `sent_for_authorization` can be decided, once; a decided request answers 409 `invalid_status_transition`. Answers 200 with the request. A clinic-owned key and an organization with no insurer link are refused (`hmo_not_linked`). The `Idempotency-Key` header is REQUIRED.
+         */
+        post: operations["decideInsurancePreAuthorization"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clinics/{clinic_id}/insurance/payment-advices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the payment advices.
+         * @description The advices your insurer sent (every insurer's for a clinic-owned key). Needs the `insurance.remittances:write` permission.
+         */
+        get: operations["listInsurancePaymentAdvices"];
+        put?: never;
+        /**
+         * Tell the clinic what your insurer paid.
+         * @description Records an ADVICE for clinic staff to reconcile. It never changes a claim, a payment or the clinic's books - the clinic records the money itself. Answers 201 with the advice. Only for the insurer the clinic linked to your organization. The `Idempotency-Key` header is REQUIRED.
+         */
+        post: operations["createInsurancePaymentAdvice"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
 }
@@ -2218,7 +2450,8 @@ export interface components {
             pipeline_id?: string | null;
             /** Format: uuid */
             stage_id?: string | null;
-            source?: string;
+            /** @enum {string} */
+            source?: "booking_page" | "website" | "contact_form" | "referral" | "manual" | "import" | "walk_in" | "phone" | "social";
             /** Format: uuid */
             referral_source_id?: string | null;
             interest?: string | null;
@@ -2249,7 +2482,8 @@ export interface components {
             pipeline_id?: string | null;
             /** Format: uuid */
             stage_id?: string | null;
-            source?: string;
+            /** @enum {string} */
+            source?: "booking_page" | "website" | "contact_form" | "referral" | "manual" | "import" | "walk_in" | "phone" | "social";
             /** Format: uuid */
             owner_staff_id?: string | null;
             /** Format: uuid */
@@ -3315,7 +3549,7 @@ export interface components {
             /** @description The medicine's name as the clinic lists it. Never a brand, batch, price or manufacturer. */
             name: string;
         };
-        /** @description A prescription, read only and deliberately minimal: the drug, the dose, the frequency, the status and when it was written. Nothing about dispensing, payment, scheduling, the prescriber or notes ever leaves the clinic. There is no way to create or change a prescription through the API. `source` is `eprescribe` for a prescription sent through the clinic's e-prescribing connection and `clinic` otherwise. `status: unknown` appears only on an `eprescribe` prescription whose status the e-prescribing service reports in a form the platform does not recognise. */
+        /** @description A prescription, read only and deliberately minimal: the drug, the dose, the frequency, the status and when it was written. Nothing about dispensing, payment, scheduling, the prescriber or notes ever leaves the clinic. There is no way to create or change a prescription through the API. `source` is `eprescribe` for a prescription sent through the clinic's e-prescribing connection and `clinic` otherwise. `status: unknown` appears only on an `eprescribe` prescription whose status the e-prescribing service reports in a form the platform does not recognise. A prescription that exists only in the clinic's e-prescribing service (it was not written in the clinic) is returned to the clinic's own keys only; an organization's key never receives it, under the e-prescribing network's rules. */
         Prescription: {
             /** Format: uuid */
             id: string;
@@ -3873,6 +4107,412 @@ export interface components {
             /** @enum {string} */
             network_status?: "in_network" | "out_of_network" | "unknown";
             is_primary?: boolean;
+        };
+        /** @description A person an insurer covers at this clinic, as the clinic holds them. `insurance_no` is the number an enrollee is verified by. Only enrollees of an insurer the clinic linked to your organization are returned. Verification metadata and the clinic's internal notes are never exposed. */
+        InsuranceEnrollee: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            insurance_company_id: string;
+            /**
+             * Format: uuid
+             * @description The clinic's own patient id; null for a floating enrollee not yet matched to a patient.
+             */
+            patient_id?: string | null;
+            insurance_no: string;
+            alternate_insurance_no?: string | null;
+            firstname?: string | null;
+            middlename?: string | null;
+            lastname?: string | null;
+            sex?: string | null;
+            /** Format: date */
+            birthdate?: string | null;
+            /**
+             * @description Curacel enrollee status codes: AA active, IA inactive, SX suspended, XX cancelled, PP pending, WP waiting period.
+             * @enum {string}
+             */
+            status: "AA" | "IA" | "SX" | "XX" | "PP" | "WP";
+            /** Format: date */
+            status_effective_from?: string | null;
+            /** Format: date */
+            valid_until?: string | null;
+            plan?: components["schemas"]["InsuranceEnrolleePlan"] | null;
+            /** Format: uuid */
+            parent_enrollee_id?: string | null;
+            parent_relationship?: string | null;
+            staff_number?: string | null;
+            primary_provider_code?: string | null;
+            is_floating?: boolean | null;
+            /** Format: date-time */
+            verified_at?: string | null;
+            /** Format: date-time */
+            updated_at?: string | null;
+        };
+        InsuranceEnrolleePlan: {
+            /** Format: uuid */
+            id: string;
+            name: string | null;
+            code: string | null;
+        };
+        /** @description One benefit line of a plan - what is covered, at what percentage, with what limit. */
+        InsurancePlanBenefit: {
+            /** Format: uuid */
+            id?: string;
+            name?: string | null;
+            coverage_type?: string | null;
+            claim_category?: string | null;
+            covered?: boolean | null;
+            coverage_percentage?: number | null;
+            co_payment_value?: number | null;
+            limit_type?: string | null;
+            limit_value?: number | null;
+            max_amount?: number | null;
+            waiting_period?: number | null;
+            enrollee_type?: string | null;
+            gender?: string | null;
+            active?: boolean | null;
+        };
+        /** @description A plan of an insurer the clinic linked to your organization. The list omits `benefits`; the single-plan read carries them (up to 500). */
+        InsurancePlan: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            insurance_company_id: string;
+            name: string;
+            code?: string | null;
+            /** @description The insurer's own identifier for the plan. */
+            id_from_hmo?: string | null;
+            plan_type?: string | null;
+            coverage_type?: string | null;
+            description?: string | null;
+            amount_limit?: number | null;
+            co_payment_value?: number | null;
+            cover_dependants?: boolean | null;
+            dependant_limit?: number | null;
+            pre_authorization_required?: boolean | null;
+            network_type?: string | null;
+            waiting_period_days?: number | null;
+            active?: boolean | null;
+            /** Format: date-time */
+            updated_at?: string | null;
+            /** @description Present on the single-plan read only. */
+            benefits?: components["schemas"]["InsurancePlanBenefit"][];
+        };
+        InsuranceDiagnosis: {
+            icd_code: string;
+            name?: string | null;
+            is_primary?: boolean | null;
+        };
+        /** @description A line of a claim. `*_billed` is what the clinic billed; `*_approved` is what the insurer approved (null until vetted). `hmo_item_status` is `PENDING`, `APPROVED`, `ADJUSTED` or `DECLINED`. */
+        InsuranceClaimItem: {
+            /** Format: uuid */
+            id?: string;
+            item_type?: string | null;
+            description?: string | null;
+            tariff_code?: string | null;
+            /** Format: date-time */
+            service_date?: string | null;
+            qty_billed?: number | null;
+            unit_price_billed?: number | null;
+            sub_total_billed?: number | null;
+            qty_approved?: number | null;
+            unit_price_approved?: number | null;
+            sub_total_approved?: number | null;
+            /** @enum {string|null} */
+            hmo_item_status?: "PENDING" | "APPROVED" | "ADJUSTED" | "DECLINED" | null;
+            denial_reason?: string | null;
+            comments?: string[];
+            benefit_label?: string | null;
+        };
+        /** @description Metadata of a document attached to a claim. The file itself is not served by this API. */
+        InsuranceClaimDocument: {
+            /** Format: uuid */
+            id?: string;
+            document_type?: string | null;
+            file_name?: string | null;
+            mime_type?: string | null;
+            file_size?: number | null;
+            /** Format: date-time */
+            document_date?: string | null;
+            description?: string | null;
+        };
+        /** @description A claim the clinic submitted to an insurer. `status` is the clinic-side lifecycle (`submitted`, `approved`, `partially_approved`, `denied`, `partially_paid`, `paid`, ...); `hmo_status` is the insurer's verdict (`PENDING`, `APPROVED`, `PARTIALLY_APPROVED`, `REJECTED`). `paid_amount` and `written_off_amount` are what the CLINIC has recorded - no API call changes them. `items`, `diagnoses` and `documents` are on the single-claim read only. The clinic's notes and internal analysis are never exposed. */
+        InsuranceClaim: {
+            /** Format: uuid */
+            id: string;
+            claim_number: string;
+            /** Format: uuid */
+            insurance_company_id: string;
+            /** Format: uuid */
+            insurance_plan_id?: string | null;
+            /** Format: uuid */
+            enrollee_id?: string | null;
+            /** Format: uuid */
+            patient_id?: string;
+            /** Format: uuid */
+            encounter_id?: string | null;
+            pre_auth_ids?: string[];
+            pa_code?: string | null;
+            /** @enum {string|null} */
+            claim_type?: "outpatient" | "inpatient" | "emergency" | "pharmacy" | "lab" | "radiology" | "dental" | "optical" | "other" | null;
+            status: string;
+            /** @enum {string|null} */
+            hmo_status?: "PENDING" | "APPROVED" | "PARTIALLY_APPROVED" | "REJECTED" | null;
+            currency?: string | null;
+            amount_billed?: number | null;
+            amount_approved?: number | null;
+            paid_amount?: number | null;
+            written_off_amount?: number | null;
+            patient_responsibility?: number | null;
+            /** Format: date-time */
+            service_date_from?: string | null;
+            /** Format: date-time */
+            service_date_to?: string | null;
+            /** Format: date-time */
+            admission_date?: string | null;
+            /** Format: date-time */
+            discharge_date?: string | null;
+            is_floating?: boolean | null;
+            /** Format: date-time */
+            submitted_at?: string | null;
+            /** Format: date-time */
+            vetted_at?: string | null;
+            /** Format: date-time */
+            approved_at?: string | null;
+            /** Format: date-time */
+            paid_at?: string | null;
+            denial_reason?: string | null;
+            denial_code?: string | null;
+            /** Format: date-time */
+            created_at?: string | null;
+            /** Format: date-time */
+            updated_at?: string | null;
+            items?: components["schemas"]["InsuranceClaimItem"][];
+            diagnoses?: components["schemas"]["InsuranceDiagnosis"][];
+            documents?: components["schemas"]["InsuranceClaimDocument"][];
+        };
+        InsuranceClaimSubmitItem: {
+            description: string;
+            /**
+             * @default service
+             * @enum {string}
+             */
+            item_type: "consultation" | "procedure" | "medication" | "lab_test" | "imaging" | "radiology" | "service" | "equipment" | "hospitalization" | "room_charge" | "other";
+            tariff_code?: string;
+            /** @default 1 */
+            quantity: number;
+            unit_price: number;
+            /** Format: date-time */
+            service_date?: string;
+        };
+        InsuranceDiagnosisInput: {
+            icd_code: string;
+            name?: string;
+            is_primary?: boolean;
+        };
+        /** @description A claim to submit to one of the clinic's insurers for a patient. It is saved as `submitted` with no money on it. `patient_id` must be a patient your organization is linked to (a clinic-owned key may use any of its clinic's patients). There is no field for a paid or written-off amount; sending one is refused as an unknown field. */
+        InsuranceClaimSubmit: {
+            /** Format: uuid */
+            patient_id: string;
+            /** Format: uuid */
+            insurance_company_id: string;
+            /**
+             * Format: uuid
+             * @description Must be an enrollee of that patient with that insurer.
+             */
+            enrollee_id?: string;
+            /**
+             * @default outpatient
+             * @enum {string}
+             */
+            claim_type: "outpatient" | "inpatient" | "emergency" | "pharmacy" | "lab" | "radiology" | "dental" | "optical" | "other";
+            /** Format: date-time */
+            service_date_from: string;
+            /** Format: date-time */
+            service_date_to?: string;
+            /** Format: date-time */
+            admission_date?: string;
+            /** Format: date-time */
+            discharge_date?: string;
+            pa_code?: string;
+            diagnoses?: components["schemas"]["InsuranceDiagnosisInput"][];
+            items: components["schemas"]["InsuranceClaimSubmitItem"][];
+        };
+        InsuranceClaimLineDecision: {
+            /** Format: uuid */
+            item_id: string;
+            /**
+             * @description `adjusted` approves less than was billed (set `qty_approved` and/or `unit_price_approved`); `approved` is exactly as billed.
+             * @enum {string}
+             */
+            status: "approved" | "adjusted" | "declined";
+            qty_approved?: number;
+            unit_price_approved?: number;
+            /** @description Required for `declined` unless the body has a top-level `reason`. */
+            reason?: string;
+            comment?: string;
+        };
+        /** @description Vet a claim. `decision` sets what EVERY line gets (`approved` at billed figures, or `rejected` at zero); `items` overrides individual lines, so "approve everything except this line" is `decision: approved` plus one declined line. The claim's status follows the lines: all approved as billed - `approved`; all declined - `denied`; anything else - `partially_approved`. A rejection needs a `reason`. You can never approve more than was billed, and a claim the clinic has already recorded money against can no longer be vetted. Nothing here moves money. */
+        InsuranceClaimAdjudication: {
+            /** @enum {string} */
+            decision: "approved" | "rejected";
+            reason?: string;
+            /** @description The authorization code the claim is matched to, if any. */
+            pa_code?: string;
+            items?: components["schemas"]["InsuranceClaimLineDecision"][];
+        };
+        InsurancePreAuthorizationItem: {
+            /** Format: uuid */
+            id?: string;
+            item_type?: string | null;
+            description?: string | null;
+            tariff_code?: string | null;
+            quantity?: number | null;
+            unit_cost?: number | null;
+            total_cost?: number | null;
+            diagnosis?: string | null;
+            icd_cpt_code?: string | null;
+            medical_necessity?: string | null;
+            approval_status?: string | null;
+            is_approved?: boolean | null;
+            reject_reason?: string | null;
+        };
+        /** @description A pre-authorization request the clinic sent to an insurer. `status` is `sent_for_authorization` until the insurer decides, then `approved` or `denied` (with `pa_code` on approval). `items` and `diagnoses` are on the single read only. */
+        InsurancePreAuthorization: {
+            /** Format: uuid */
+            id: string;
+            request_number: string;
+            /** Format: uuid */
+            insurance_company_id: string;
+            /** Format: uuid */
+            insurance_plan_id?: string | null;
+            /** Format: uuid */
+            enrollee_id?: string | null;
+            /** Format: uuid */
+            patient_id?: string;
+            /** Format: uuid */
+            encounter_id?: string | null;
+            /** @enum {string|null} */
+            request_type?: "service" | "procedure" | "medication" | "equipment" | "hospitalization" | "consultation" | "lab_test" | null;
+            /** @enum {string|null} */
+            priority_level?: "routine" | "urgent" | "emergency" | null;
+            /** @enum {string} */
+            status: "draft" | "ai_reviewed" | "reviewed" | "sent_for_authorization" | "approved" | "denied" | "expired" | "cancelled";
+            estimated_cost?: number | null;
+            approved_amount?: number | null;
+            pa_code?: string | null;
+            pr_code?: string | null;
+            is_approved?: boolean | null;
+            is_handled?: boolean | null;
+            /** Format: date-time */
+            handled_at?: string | null;
+            rejection_reason?: string | null;
+            /** Format: date-time */
+            encounter_date?: string | null;
+            /** Format: date-time */
+            admission_start?: string | null;
+            /** Format: date-time */
+            admission_end?: string | null;
+            is_floating?: boolean | null;
+            /** Format: date-time */
+            submitted_at?: string | null;
+            /** Format: date-time */
+            created_at?: string | null;
+            /** Format: date-time */
+            updated_at?: string | null;
+            items?: components["schemas"]["InsurancePreAuthorizationItem"][];
+            diagnoses?: components["schemas"]["InsuranceDiagnosis"][];
+        };
+        InsurancePreAuthorizationSubmitItem: {
+            description: string;
+            /**
+             * @default service
+             * @enum {string}
+             */
+            item_type: "consultation" | "procedure" | "medication" | "lab_test" | "imaging" | "radiology" | "service" | "equipment" | "hospitalization";
+            tariff_code?: string;
+            /** @default 1 */
+            quantity: number;
+            unit_cost: number;
+            diagnosis?: string;
+            icd_cpt_code?: string;
+            medical_necessity?: string;
+        };
+        /** @description A pre-authorization request to send to one of the clinic's insurers. It is saved as `sent_for_authorization`. `patient_id` must be a patient your organization is linked to. */
+        InsurancePreAuthorizationSubmit: {
+            /** Format: uuid */
+            patient_id: string;
+            /** Format: uuid */
+            insurance_company_id: string;
+            /** Format: uuid */
+            enrollee_id?: string;
+            /** @enum {string} */
+            request_type: "service" | "procedure" | "medication" | "equipment" | "hospitalization" | "consultation" | "lab_test";
+            /**
+             * @default routine
+             * @enum {string}
+             */
+            priority_level: "routine" | "urgent" | "emergency";
+            /** Format: date-time */
+            encounter_date?: string;
+            diagnoses?: components["schemas"]["InsuranceDiagnosisInput"][];
+            items: components["schemas"]["InsurancePreAuthorizationSubmitItem"][];
+        };
+        InsurancePreAuthorizationLineDecision: {
+            /** Format: uuid */
+            item_id: string;
+            approved: boolean;
+            reason?: string;
+        };
+        /** @description Decide a request that is `sent_for_authorization`. An approval needs `pa_code`; a denial needs `reason`. `approved_amount` (approval only) defaults to the estimated cost and may not exceed it. Lines you do not list follow the decision. A decided request cannot be decided again. */
+        InsurancePreAuthorizationDecision: {
+            /** @enum {string} */
+            decision: "approved" | "denied";
+            pa_code?: string;
+            approved_amount?: number;
+            reason?: string;
+            items?: components["schemas"]["InsurancePreAuthorizationLineDecision"][];
+        };
+        InsurancePaymentAdviceAllocation: {
+            /** Format: uuid */
+            claim_id: string;
+            amount: number;
+        };
+        /** @description What an insurer says it paid the clinic. It is an ADVICE for clinic staff to reconcile: it never changes a claim, the clinic's payments or its books. `status` is `advised` until staff act on it. */
+        InsurancePaymentAdvice: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            insurance_company_id: string;
+            /** Format: date */
+            paid_on?: string;
+            amount: number;
+            currency?: string;
+            /** @enum {string} */
+            method?: "bank_transfer" | "eft" | "cheque" | "other";
+            reference?: string | null;
+            /** @enum {string} */
+            status: "advised" | "recorded" | "declined";
+            /** Format: date-time */
+            created_at?: string;
+            allocations?: {
+                /** Format: uuid */
+                claim_id?: string;
+                amount?: number;
+            }[];
+        };
+        /** @description A payment advice. Each allocation names a claim of that insurer that is awaiting payment and an amount no larger than what the claim still owes; the allocations may not add up to more than `amount`. `currency`, if sent, must be the clinic's currency. */
+        InsurancePaymentAdviceCreate: {
+            /** Format: uuid */
+            insurance_company_id: string;
+            /** Format: date */
+            paid_on: string;
+            amount: number;
+            currency?: string;
+            /** @enum {string} */
+            method: "bank_transfer" | "eft" | "cheque" | "other";
+            reference?: string;
+            allocations?: components["schemas"]["InsurancePaymentAdviceAllocation"][];
         };
     };
     responses: {
@@ -7781,6 +8421,516 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["Encounter"];
+                        /** @description Present and true when this Idempotency-Key was already used and the original answer is returned. */
+                        idempotent_replay?: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listInsuranceEnrollees: {
+        parameters: {
+            query?: {
+                insurance_company_id?: string;
+                insurance_no?: string;
+                status?: "AA" | "IA" | "SX" | "XX" | "PP" | "WP";
+                updated_since?: string;
+                limit?: number;
+                starting_after?: string;
+            };
+            header?: never;
+            path: {
+                clinic_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InsuranceEnrollee"][];
+                        has_more: boolean;
+                        next_cursor: string | null;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getInsuranceEnrollee: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clinic_id: string;
+                enrollee_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InsuranceEnrollee"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listInsurancePlans: {
+        parameters: {
+            query?: {
+                insurance_company_id?: string;
+                limit?: number;
+                starting_after?: string;
+            };
+            header?: never;
+            path: {
+                clinic_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InsurancePlan"][];
+                        has_more: boolean;
+                        next_cursor: string | null;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getInsurancePlan: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clinic_id: string;
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InsurancePlan"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listInsuranceClaims: {
+        parameters: {
+            query?: {
+                insurance_company_id?: string;
+                status?: "submitted" | "under_review" | "additional_info_required" | "approved" | "partially_approved" | "denied" | "paid" | "appealed" | "closed" | "partially_paid" | "written_off" | "draft" | "ai_reviewed" | "ready_to_submit";
+                hmo_status?: "PENDING" | "APPROVED" | "PARTIALLY_APPROVED" | "REJECTED";
+                enrollee_id?: string;
+                updated_since?: string;
+                limit?: number;
+                starting_after?: string;
+            };
+            header?: never;
+            path: {
+                clinic_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InsuranceClaim"][];
+                        has_more: boolean;
+                        next_cursor: string | null;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    submitInsuranceClaim: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A unique value you choose for this request, such as a UUID. Sending the same key again returns the first answer instead of doing the work twice, so a timed-out request is safe to retry. Reusing a key for a different request is refused with `409 idempotency_key_conflict`, and retrying while the first request is still running with `409 idempotency_key_reused`. See Retries and idempotency. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKeyRequired"];
+            };
+            path: {
+                clinic_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InsuranceClaimSubmit"];
+            };
+        };
+        responses: {
+            /** @description Created - submitted, with its lines and no money recorded. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InsuranceClaim"];
+                        /** @description Present and true when this Idempotency-Key was already used and the original answer is returned. */
+                        idempotent_replay?: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getInsuranceClaim: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clinic_id: string;
+                claim_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InsuranceClaim"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    adjudicateInsuranceClaim: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A unique value you choose for this request, such as a UUID. Sending the same key again returns the first answer instead of doing the work twice, so a timed-out request is safe to retry. Reusing a key for a different request is refused with `409 idempotency_key_conflict`, and retrying while the first request is still running with `409 idempotency_key_reused`. See Retries and idempotency. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKeyRequired"];
+            };
+            path: {
+                clinic_id: string;
+                claim_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InsuranceClaimAdjudication"];
+            };
+        };
+        responses: {
+            /** @description OK. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InsuranceClaim"];
+                        /** @description Present and true when this Idempotency-Key was already used and the original answer is returned. */
+                        idempotent_replay?: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listInsurancePreAuthorizations: {
+        parameters: {
+            query?: {
+                insurance_company_id?: string;
+                status?: "draft" | "ai_reviewed" | "reviewed" | "sent_for_authorization" | "approved" | "denied" | "expired" | "cancelled";
+                updated_since?: string;
+                limit?: number;
+                starting_after?: string;
+            };
+            header?: never;
+            path: {
+                clinic_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InsurancePreAuthorization"][];
+                        has_more: boolean;
+                        next_cursor: string | null;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    submitInsurancePreAuthorization: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A unique value you choose for this request, such as a UUID. Sending the same key again returns the first answer instead of doing the work twice, so a timed-out request is safe to retry. Reusing a key for a different request is refused with `409 idempotency_key_conflict`, and retrying while the first request is still running with `409 idempotency_key_reused`. See Retries and idempotency. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKeyRequired"];
+            };
+            path: {
+                clinic_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InsurancePreAuthorizationSubmit"];
+            };
+        };
+        responses: {
+            /** @description Created - sent for authorization. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InsurancePreAuthorization"];
+                        /** @description Present and true when this Idempotency-Key was already used and the original answer is returned. */
+                        idempotent_replay?: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getInsurancePreAuthorization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clinic_id: string;
+                pa_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InsurancePreAuthorization"];
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    decideInsurancePreAuthorization: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A unique value you choose for this request, such as a UUID. Sending the same key again returns the first answer instead of doing the work twice, so a timed-out request is safe to retry. Reusing a key for a different request is refused with `409 idempotency_key_conflict`, and retrying while the first request is still running with `409 idempotency_key_reused`. See Retries and idempotency. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKeyRequired"];
+            };
+            path: {
+                clinic_id: string;
+                pa_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InsurancePreAuthorizationDecision"];
+            };
+        };
+        responses: {
+            /** @description OK. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InsurancePreAuthorization"];
+                        /** @description Present and true when this Idempotency-Key was already used and the original answer is returned. */
+                        idempotent_replay?: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listInsurancePaymentAdvices: {
+        parameters: {
+            query?: {
+                insurance_company_id?: string;
+                limit?: number;
+                starting_after?: string;
+            };
+            header?: never;
+            path: {
+                clinic_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InsurancePaymentAdvice"][];
+                        has_more: boolean;
+                        next_cursor: string | null;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    createInsurancePaymentAdvice: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A unique value you choose for this request, such as a UUID. Sending the same key again returns the first answer instead of doing the work twice, so a timed-out request is safe to retry. Reusing a key for a different request is refused with `409 idempotency_key_conflict`, and retrying while the first request is still running with `409 idempotency_key_reused`. See Retries and idempotency. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKeyRequired"];
+            };
+            path: {
+                clinic_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InsurancePaymentAdviceCreate"];
+            };
+        };
+        responses: {
+            /** @description Created - an advice, status `advised`. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["InsurancePaymentAdvice"];
                         /** @description Present and true when this Idempotency-Key was already used and the original answer is returned. */
                         idempotent_replay?: boolean;
                     };

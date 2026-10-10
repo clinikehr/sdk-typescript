@@ -5,11 +5,10 @@ name: Publish to npm
 # link this repository and the workflow file name publish.yml as the trusted
 # publisher of @clinikehr/api on npmjs.com.
 #
-# The very first release of a package cannot use trusted publishing (the
-# package must exist before a trusted publisher can be linked). For that one
-# release only, an NPM_TOKEN repository secret is used when present. Delete
-# the secret once the trusted publisher is linked; later releases then use
-# OIDC alone.
+# The trusted publisher was linked on 2026-10-09 (0.1.0-0.1.2 went out with a
+# one-off token, since a package must exist before a publisher can be linked).
+# There is deliberately no token path any more: a publish that cannot prove it
+# came from this workflow fails instead of falling back to a secret.
 
 on:
   push:
@@ -23,8 +22,6 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +37,9 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # Load the BUILT CommonJS and ESM entry points and make one call each: 0.1.0-0.1.2 passed
+      # every source test while require("@clinikehr/api") could not create a client.
+      - run: npm run smoke:dist
 
       - name: Tag must equal the package version
         run: |
@@ -50,14 +50,7 @@ jobs:
           fi
 
       - name: Publish with trusted publishing (OIDC)
-        if: env.NPM_TOKEN == ''
         run: |
           rm -f "$NPM_CONFIG_USERCONFIG"
           unset NODE_AUTH_TOKEN
           npm publish --provenance --access public
-
-      - name: Publish with NPM_TOKEN (first release only)
-        if: env.NPM_TOKEN != ''
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: npm publish --provenance --access public

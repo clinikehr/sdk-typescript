@@ -93,6 +93,34 @@ describe("createClient — automatic Idempotency-Key on POST", () => {
     });
     expect(seen).toBe("caller-chosen-key");
   });
+
+  // 0.1.2 sent the header on POST only, so a PATCH route that requires it
+  // (PATCH /appointments/{id}) answered 400 whatever the caller passed.
+  it("sends a generated key on PATCH, and the caller's when given", async () => {
+    const seen: (string | null)[] = [];
+    const fetchSpy = vi.fn(async (input: Request) => {
+      seen.push(input.headers.get("idempotency-key"));
+      return jsonResponse({});
+    });
+    const client = createClient({ apiKey: "ehr_test_fakekey", fetch: fetchSpy as unknown as typeof fetch });
+    const opts = { params: { path: { clinic_id: "c", appointment_id: "a" } }, body: {} };
+    await client.PATCH("/v1/clinics/{clinic_id}/appointments/{appointment_id}" as never, opts);
+    await client.PATCH("/v1/clinics/{clinic_id}/appointments/{appointment_id}" as never, { ...opts, idempotencyKey: "mine" });
+    expect(seen[0]).toMatch(/^[0-9a-f-]{36}$/);
+    expect(seen[1]).toBe("mine");
+  });
+
+  it("sends a key on DELETE only when the caller passes one", async () => {
+    const seen: (string | null)[] = [];
+    const fetchSpy = vi.fn(async (input: Request) => {
+      seen.push(input.headers.get("idempotency-key"));
+      return new Response(null, { status: 204 });
+    });
+    const client = createClient({ apiKey: "ehr_test_fakekey", fetch: fetchSpy as unknown as typeof fetch });
+    await client.DELETE("/v1/me" as never);
+    await client.DELETE("/v1/me" as never, { idempotencyKey: "del-1" });
+    expect(seen).toEqual([null, "del-1"]);
+  });
 });
 
 describe("createClient — retry and error typing", () => {
