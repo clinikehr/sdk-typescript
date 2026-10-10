@@ -161,3 +161,36 @@ describe("createClient — browser guard", () => {
     expect(() => createClient({ apiKey: "ehr_test_fakekey", _dangerouslySkipServerCheck: true })).not.toThrow();
   });
 });
+
+describe("createClient — the URL actually requested (0.1.2: 0.1.0/0.1.1 requested /v1/v1/… and every call was a 404)", () => {
+  async function urlFor(baseUrl: string | undefined, path: "/v1/me" | "/v1/clinics/{clinic_id}/inventory/items"): Promise<string> {
+    let seen = "";
+    const fetchSpy = vi.fn(async (input: Request) => {
+      seen = input.url;
+      return jsonResponse({ data: [], has_more: false, next_cursor: null });
+    });
+    const client = createClient({ apiKey: "ehr_test_fakekey", fetch: fetchSpy as unknown as typeof fetch, ...(baseUrl === undefined ? {} : { baseUrl }) });
+    if (path === "/v1/me") await client.GET("/v1/me");
+    else await client.GET(path, { params: { path: { clinic_id: "c1" }, query: { limit: 5 } } });
+    return seen;
+  }
+
+  it("the default reaches https://api.clinikehr.com/v1/<route> — exactly one /v1", async () => {
+    expect(await urlFor(undefined, "/v1/me")).toBe("https://api.clinikehr.com/v1/me");
+    expect(await urlFor(undefined, "/v1/clinics/{clinic_id}/inventory/items")).toBe("https://api.clinikehr.com/v1/clinics/c1/inventory/items?limit=5");
+  });
+
+  it("a configured base ending in /v1 (as the docs name the API) is not doubled", async () => {
+    expect(await urlFor("https://api.clinikehr.com/v1", "/v1/me")).toBe("https://api.clinikehr.com/v1/me");
+    expect(await urlFor("https://api.clinikehr.com/v1/", "/v1/me")).toBe("https://api.clinikehr.com/v1/me");
+    expect(await urlFor("https://proxy.example.com", "/v1/me")).toBe("https://proxy.example.com/v1/me");
+  });
+
+  it("the raw client uses the same base", async () => {
+    let seen = "";
+    const fetchSpy = vi.fn(async (input: Request) => { seen = input.url; return jsonResponse({}); });
+    const client = createClient({ apiKey: "ehr_test_fakekey", fetch: fetchSpy as unknown as typeof fetch });
+    await client.raw.GET("/v1/me", {});
+    expect(seen).toBe("https://api.clinikehr.com/v1/me");
+  });
+});

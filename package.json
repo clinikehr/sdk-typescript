@@ -1,6 +1,6 @@
 {
   "name": "@clinikehr/api",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Server-side TypeScript SDK for the ClinikEHR API (api.clinikehr.com): typed paths generated from the OpenAPI document, retries, idempotency keys, cursor pagination and webhook verification.",
   "license": "MIT",
   "publishConfig": {
