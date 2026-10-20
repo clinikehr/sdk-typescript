@@ -493,7 +493,7 @@ export interface paths {
         put?: never;
         /**
          * Upload a batch of external stock quantities/bands for a pharmacy selling through another till.
-         * @description Clinic-owned key only — an organization never pushes a clinic's own stock. batch_id doubles as the idempotency key (a replay of an already-processed batch returns the stored result, never reprocesses). Unmatched rows are counted, never guessed at, never written. A structurally invalid or suspiciously-shrunk batch is rejected (409) — nothing is written to the mirror.
+         * @description Clinic-owned key only — an organization never pushes a clinic's own stock. batch_id doubles as the idempotency key (a replay of an already-processed batch returns the stored result, never reprocesses). Unmatched rows are counted, never guessed at, never written. A structurally invalid or suspiciously-shrunk batch is rejected (409 `batch_rejected`, with the reason in `detail`) — nothing is written to the mirror. A pharmacy that is not set to take a stock report from another system is refused (409 `external_stock_mode_required`) before anything is read or written. Permission: a key needs EITHER `inventory.external_stock:write` (the narrow permission for exactly this report; any paid pharmacy plan, including the listing plan) OR `inventory.stock:write` (Team and above). A key with only the narrow permission cannot read, adjust or receive stock.
          */
         post: operations["createExternalStockBatch"];
         delete?: never;
@@ -509,7 +509,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The stored batch's own status and counts — never the row-level data. */
+        /**
+         * The stored batch's own status and counts — never the row-level data.
+         * @description Needs `inventory.stock:read` OR the narrow `inventory.external_stock:write` (the key that sent the report can read back its status).
+         */
         get: operations["getExternalStockBatch"];
         put?: never;
         post?: never;
@@ -1808,6 +1811,127 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/clinics/{clinic_id}/prescription-pickups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List one patient's prescription pickup handovers.
+         * @description `patient_id` is required. Each pickup covers one or more dispensed lines. The signature image is never returned — `has_signature` only. `agent_name` is never shown to an organization connection.
+         */
+        get: operations["listPrescriptionPickups"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clinics/{clinic_id}/prescription-pickups/{pickup_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read one prescription pickup.
+         * @description Absent and not-permitted answer the same 404.
+         */
+        get: operations["getPrescriptionPickup"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clinics/{clinic_id}/prescription-pickups/{pickup_id}/collection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Submit a prescription pickup collection for clinician review.
+         * @description Held for review and answers 202 Accepted with a `Location` header pointing at the submission; the pickup stays `awaiting` until a clinician confirms it in ClinikEHR, or the clinic has chosen automatic acceptance for this key — then it is confirmed immediately and the body already shows `review_status: confirmed`. On confirm, staff run the SAME single write path the pharmacy counter uses — never a parallel write. The `Idempotency-Key` header is REQUIRED.
+         */
+        post: operations["createPrescriptionPickupCollection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clinics/{clinic_id}/outreach-events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List this clinic's outreach (screening-day) events.
+         * @description Events and stations carry no patient data.
+         */
+        get: operations["listOutreachEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clinics/{clinic_id}/outreach-events/{event_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read one outreach event, with its stations. */
+        get: operations["getOutreachEvent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/clinics/{clinic_id}/outreach-events/{event_id}/attendees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List who is checked in to an outreach event.
+         * @description A restricted patient and, for an organization key, a patient your connection is not linked to, are both excluded from the rows.
+         */
+        get: operations["listOutreachEventAttendees"];
+        put?: never;
+        /**
+         * Check an existing patient in to an outreach event, for clinician review.
+         * @description Create the patient first with `POST /v1/clinics/{clinic_id}/patients`. Held for review and answers 202 Accepted with a `Location` header pointing at the submission, or immediately confirmed when the clinic has chosen automatic acceptance for this key. On confirm, staff run the SAME single write path the app's own Check in button uses. The `Idempotency-Key` header is REQUIRED.
+         */
+        post: operations["createOutreachEventAttendee"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1967,6 +2091,11 @@ export interface components {
             hours?: Record<string, never> | null;
             /** @description Computed from the clinic's own business hours. Null when hours are absent or malformed for today — never a guess. */
             open_now?: boolean | null;
+            /**
+             * Format: uri
+             * @description The pharmacy's online store. Present ONLY when the store is safe to advertise: its page is enabled, it can take payment, the pharmacy is not on the listing-only plan, and ClinikEHR (not another system) holds its stock. Otherwise null. A pharmacy's own web address, when it has connected one, is used instead of the hosted address.
+             */
+            store_url?: string | null;
         };
         ListingProfile: {
             /** Format: uuid */
@@ -1987,6 +2116,11 @@ export interface components {
             profile_completed_at?: string | null;
             /** Format: date-time */
             updated_at?: string | null;
+            /**
+             * Format: uri
+             * @description The pharmacy's online store. Present ONLY when the store is safe to advertise: its page is enabled, it can take payment, the pharmacy is not on the listing-only plan, and ClinikEHR (not another system) holds its stock. Otherwise null. A pharmacy's own web address, when it has connected one, is used instead of the hosted address.
+             */
+            store_url?: string | null;
         };
         ListingSearchResult: {
             /** Format: uuid */
@@ -2004,6 +2138,11 @@ export interface components {
             distance_km?: number | null;
             /** Format: date-time */
             as_of?: string | null;
+            /**
+             * Format: uri
+             * @description This product's page in the pharmacy's online store. Present ONLY when the store is safe to advertise (enabled page, able to take payment, not a listing-only plan, ClinikEHR holds the stock), the item is listed and not excluded, and an active, public store product is backed by this exact item. Otherwise null - never a guess, and never a link to the store's front page in place of the product. A pharmacy's own web address, when it has connected one, is used instead of the hosted address.
+             */
+            store_url?: string | null;
         };
         ListingClinicItem: {
             /** Format: uuid */
@@ -2012,6 +2151,11 @@ export interface components {
             band: components["schemas"]["ListingBand"];
             /** Format: date-time */
             as_of?: string | null;
+            /**
+             * Format: uri
+             * @description This product's page in the pharmacy's online store. Present ONLY when the store is safe to advertise (enabled page, able to take payment, not a listing-only plan, ClinikEHR holds the stock), the item is listed and not excluded, and an active, public store product is backed by this exact item. Otherwise null - never a guess, and never a link to the store's front page in place of the product. A pharmacy's own web address, when it has connected one, is used instead of the hosted address.
+             */
+            store_url?: string | null;
         };
         /** @description Exactly one of an identifier {system, value} or a free-text {q}. */
         ListingSearchRequestItem: {
@@ -2306,6 +2450,7 @@ export interface components {
             evidence?: Record<string, never>;
             reason?: components["schemas"]["DispensingFlagReason"];
         };
+        /** @description One product in a stock report. Send at least one identifier and at least one of `quantity` and `band`. A batch with any row that breaks these rules is rejected whole (`rejected_reason: invalid_rows`) and nothing is written. */
         ExternalStockBatchRow: {
             identifiers: components["schemas"]["Identifier"][];
             quantity?: number | null;
@@ -3577,12 +3722,12 @@ export interface components {
              * @description The kind of record.
              * @enum {string}
              */
-            resource_type: "condition" | "allergy" | "medication_statement" | "referral";
+            resource_type: "condition" | "allergy" | "medication_statement" | "referral" | "prescription_pickup_collection" | "outreach_checkin";
             /** @enum {string} */
             action: "create" | "update" | "retract";
             /**
              * Format: uuid
-             * @description The existing record an update or retract is about.
+             * @description The existing record an update or retract is about — for `prescription_pickup_collection` this is the pickup being completed.
              */
             target_id?: string | null;
             /** @enum {string} */
@@ -3604,8 +3749,10 @@ export interface components {
             result_record_id?: string | null;
             client_reference?: string | null;
             origin_assistant_name?: string | null;
-            /** @description What was submitted. */
+            /** @description What was submitted. For `prescription_pickup_collection` this never carries the signature image — see `has_signature`. */
             payload?: Record<string, never>;
+            /** @description `prescription_pickup_collection` only: whether a signature was included. The signature image itself is never returned. Null for every other resource_type. */
+            has_signature?: boolean | null;
         };
         ProviderSpecialty: {
             code: string;
@@ -4514,6 +4661,133 @@ export interface components {
             reference?: string;
             allocations?: components["schemas"]["InsurancePaymentAdviceAllocation"][];
         };
+        PickupAnswer: {
+            id: string;
+            /** @description The exact wording shown when the answer was given. */
+            text_shown: string;
+            /** @enum {string} */
+            answer: "yes" | "no";
+        };
+        /** @description Exactly one of `prescription_id` / `pos_sale_item_id` is set: a full-edition in-house pharmacy's pickup lines carry `prescription_id`; a Pharmacy-edition till sale's pickup lines carry `pos_sale_item_id` instead (the sale's own line, not a prescription). */
+        PickupLine: {
+            /** Format: uuid */
+            prescription_id?: string | null;
+            /** Format: uuid */
+            pos_sale_item_id?: string | null;
+        };
+        /** @description One prescription-pickup handover. Signatures are never returned — `has_signature` only. `agent_name` is never shown to an organization connection (only `agent_relationship` is). `pos_sale_id` is set, and `lines` carry `pos_sale_item_id` instead of `prescription_id`, for a Pharmacy-edition till sale's pickup; otherwise both are null. */
+        Pickup: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            patient_id: string;
+            /** @enum {string} */
+            status: "awaiting" | "remote_pending" | "collected" | "voided";
+            /** @enum {string|null} */
+            collected_by?: "patient" | "agent" | null;
+            /** @description Who collected, when collected_by is agent. Never shown to an organization connection — null there even when one was recorded. */
+            agent_name?: string | null;
+            agent_relationship?: string | null;
+            /** @enum {string|null} */
+            counselling?: "accepted" | "declined" | null;
+            answers?: components["schemas"]["PickupAnswer"][];
+            has_signature?: boolean;
+            privacy_acknowledged_version?: number | null;
+            lines?: components["schemas"]["PickupLine"][];
+            /** Format: uuid */
+            outreach_event_id?: string | null;
+            /**
+             * Format: uuid
+             * @description Set for a Pharmacy-edition till sale's pickup; null for a full-edition in-house pharmacy pickup.
+             */
+            pos_sale_id?: string | null;
+            /** Format: date-time */
+            collected_at?: string | null;
+            /** Format: date-time */
+            voided_at?: string | null;
+            /** @description Present only when voided. */
+            void_reason?: string | null;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        /** @description A collection, submitted for clinician review — it never writes the pickup directly. `signature_data` is required: the clinic's single write path cannot mark a pickup collected without one. Send the image your own kiosk captured. */
+        PickupCollectionCreate: {
+            /** @enum {string} */
+            collected_by: "patient" | "agent";
+            /** @description Required when collected_by is agent. */
+            agent_name?: string;
+            /** @description Required when collected_by is agent. */
+            agent_relationship?: string;
+            /** @enum {string} */
+            counselling: "accepted" | "declined";
+            /** @description Only `id` and `answer` are read back; send the clinic's own question ids. */
+            answers?: components["schemas"]["PickupAnswer"][];
+            /** @description A PNG data URL, under 64 KB. */
+            signature_data: string;
+            /** @description Prescription ids to hand over, for a partial pickup. Omit to hand over every line. */
+            line_ids?: string[];
+            /** @description Present only when the clinic's privacy notice is due (GET the pickup first to check). */
+            privacy_ack?: Record<string, never>;
+            client_reference?: string;
+            origin_assistant_name?: string;
+        };
+        OutreachStation: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @enum {string} */
+            kind: "intake" | "vitals" | "lab" | "radiology" | "consultation" | "dental" | "vision" | "pharmacy" | "custom";
+            position: number;
+        };
+        OutreachEvent: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: date */
+            starts_on: string;
+            /** Format: date */
+            ends_on: string;
+            location_text?: string | null;
+            /** @enum {string} */
+            status: "planned" | "open" | "closed";
+            /** Format: date-time */
+            closed_at?: string | null;
+            stations?: components["schemas"]["OutreachStation"][];
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        OutreachStationProgress: {
+            /** Format: uuid */
+            station_id: string;
+            name: string;
+            /** @enum {string} */
+            kind: "intake" | "vitals" | "lab" | "radiology" | "consultation" | "dental" | "vision" | "pharmacy" | "custom";
+            position: number;
+            /** @enum {string} */
+            status: "pending" | "done" | "skipped";
+        };
+        OutreachAttendee: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            event_id: string;
+            /** Format: uuid */
+            patient_id: string;
+            /** Format: date-time */
+            checked_in_at: string;
+            progress?: components["schemas"]["OutreachStationProgress"][];
+        };
+        /** @description A check-in for an EXISTING patient, submitted for clinician review. Create the patient first with `POST /v1/clinics/{clinic_id}/patients`. */
+        OutreachAttendeeCheckinCreate: {
+            /** Format: uuid */
+            patient_id: string;
+            client_reference?: string;
+            origin_assistant_name?: string;
+        };
     };
     responses: {
         /** @description Missing, malformed, unknown, revoked or expired key, or the wrong secret. */
@@ -4561,7 +4835,7 @@ export interface components {
                 "application/problem+json": components["schemas"]["Problem"];
             };
         };
-        /** @description The request is well-formed but conflicts with the CURRENT STATE of the record — a double-booked slot (`slot_taken`), a clinician's calendar blocked at that time (`out_of_office`), nobody eligible free (`no_provider_available`), an item that still has stock (`item_has_stock`), an item that has been used and so cannot be deleted (`item_has_history`), a ledger movement that cannot be covered (`insufficient_stock`, `expired_stock_not_transferable`), a note already signed or clinician-touched (`note_not_editable`), an Idempotency-Key already used for a different request or still in flight (`idempotency_key_conflict`, `idempotency_key_reused`), or an external-stock batch rejected as structurally invalid or a suspicious shrink versus the clinic's last accepted batch (`batch_rejected`), or an outside record that conflicts with what was already submitted or decided: the same `client_reference` sent again with different content (`client_reference_conflict`), or a submission a clinician has already decided (`submission_not_pending`), or an insurance write that conflicts with the clinic's setup or the coverage's state: the patient already has a coverage for that payer (`coverage_exists`, the existing coverage's id is in `detail` when the caller can see that patient), a payer the clinic has not enabled in Settings → Insurance (`payer_not_enabled`), or `coverage_active: true` sent through the API (`activation_requires_staff` — only clinic staff activate a coverage), or a change to an outside care provider the clinic added rather than an app (`care_provider_clinic_managed` — only the clinic can change or remove it). */
+        /** @description The request is well-formed but conflicts with the CURRENT STATE of the record — a double-booked slot (`slot_taken`), a clinician's calendar blocked at that time (`out_of_office`), nobody eligible free (`no_provider_available`), an item that still has stock (`item_has_stock`), an item that has been used and so cannot be deleted (`item_has_history`), a ledger movement that cannot be covered (`insufficient_stock`, `expired_stock_not_transferable`), a note already signed or clinician-touched (`note_not_editable`), an Idempotency-Key already used for a different request or still in flight (`idempotency_key_conflict`, `idempotency_key_reused`), or an external-stock batch rejected as structurally invalid or a suspicious shrink versus the clinic's last accepted batch (`batch_rejected`), a stock report sent to a pharmacy that is not set to take one from another system (`external_stock_mode_required`), or an outside record that conflicts with what was already submitted or decided: the same `client_reference` sent again with different content (`client_reference_conflict`), or a submission a clinician has already decided (`submission_not_pending`), or an insurance write that conflicts with the clinic's setup or the coverage's state: the patient already has a coverage for that payer (`coverage_exists`, the existing coverage's id is in `detail` when the caller can see that patient), a payer the clinic has not enabled in Settings → Insurance (`payer_not_enabled`), or `coverage_active: true` sent through the API (`activation_requires_staff` — only clinic staff activate a coverage), or a change to an outside care provider the clinic added rather than an app (`care_provider_clinic_managed` — only the clinic can change or remove it). */
         Conflict: {
             headers: {
                 [name: string]: unknown;
@@ -8932,6 +9206,254 @@ export interface operations {
                     "application/json": {
                         data: components["schemas"]["InsurancePaymentAdvice"];
                         /** @description Present and true when this Idempotency-Key was already used and the original answer is returned. */
+                        idempotent_replay?: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listPrescriptionPickups: {
+        parameters: {
+            query: {
+                patient_id: string;
+                status?: "awaiting" | "remote_pending" | "collected" | "voided";
+                since?: string;
+                limit?: number;
+                starting_after?: string;
+            };
+            header?: never;
+            path: {
+                clinic_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Pickup"][];
+                        has_more: boolean;
+                        next_cursor: string | null;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getPrescriptionPickup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clinic_id: string;
+                pickup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Pickup"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    createPrescriptionPickupCollection: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A unique value you choose for this request, such as a UUID. Sending the same key again returns the first answer instead of doing the work twice, so a timed-out request is safe to retry. Reusing a key for a different request is refused with `409 idempotency_key_conflict`, and retrying while the first request is still running with `409 idempotency_key_reused`. See Retries and idempotency. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKeyRequired"];
+            };
+            path: {
+                clinic_id: string;
+                pickup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PickupCollectionCreate"];
+            };
+        };
+        responses: {
+            /** @description Accepted — waiting for a clinician. If the clinic has chosen to accept this kind of item from your key or connection without review, the body already shows `review_status: confirmed` and `accepted_automatically: true`; read `review_status`, not the status code. */
+            202: {
+                headers: {
+                    /** @description The submission, `…/submissions/{submission_id}`. */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Submission"];
+                        /** @description Present and true when this Idempotency-Key was already used and the original submission is returned. */
+                        idempotent_replay?: boolean;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listOutreachEvents: {
+        parameters: {
+            query?: {
+                status?: "planned" | "open" | "closed";
+                limit?: number;
+                starting_after?: string;
+            };
+            header?: never;
+            path: {
+                clinic_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["OutreachEvent"][];
+                        has_more: boolean;
+                        next_cursor: string | null;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    getOutreachEvent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                clinic_id: string;
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["OutreachEvent"];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    listOutreachEventAttendees: {
+        parameters: {
+            query?: {
+                limit?: number;
+                starting_after?: string;
+            };
+            header?: never;
+            path: {
+                clinic_id: string;
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["OutreachAttendee"][];
+                        has_more: boolean;
+                        next_cursor: string | null;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    createOutreachEventAttendee: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description A unique value you choose for this request, such as a UUID. Sending the same key again returns the first answer instead of doing the work twice, so a timed-out request is safe to retry. Reusing a key for a different request is refused with `409 idempotency_key_conflict`, and retrying while the first request is still running with `409 idempotency_key_reused`. See Retries and idempotency. */
+                "Idempotency-Key": components["parameters"]["IdempotencyKeyRequired"];
+            };
+            path: {
+                clinic_id: string;
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutreachAttendeeCheckinCreate"];
+            };
+        };
+        responses: {
+            /** @description Accepted — waiting for a clinician. If the clinic has chosen to accept this kind of item from your key or connection without review, the body already shows `review_status: confirmed` and `accepted_automatically: true`; read `review_status`, not the status code. */
+            202: {
+                headers: {
+                    /** @description The submission, `…/submissions/{submission_id}`. */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Submission"];
+                        /** @description Present and true when this Idempotency-Key was already used and the original submission is returned. */
                         idempotent_replay?: boolean;
                     };
                 };
