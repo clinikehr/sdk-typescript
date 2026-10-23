@@ -2020,6 +2020,8 @@ export interface components {
              * @description When the item was archived, or null while it is active.
              */
             archived_at?: string | null;
+            /** @description True when the clinic has marked this item as a controlled medicine. Changed only in the ClinikEHR app by staff with the Mark medicines as controlled permission. */
+            readonly is_controlled: boolean;
             identifiers: components["schemas"]["Identifier"][];
             retail_price?: components["schemas"]["Money"] | null;
             /** Format: date-time */
@@ -4668,11 +4670,22 @@ export interface components {
             /** @enum {string} */
             answer: "yes" | "no";
         };
-        /** @description Exactly one of `prescription_id` / `pos_sale_item_id` is set: a full-edition in-house pharmacy's pickup lines carry `prescription_id`; a Pharmacy-edition till sale's pickup lines carry `pos_sale_item_id` instead (the sale's own line, not a prescription). */
+        /** @description One line of a pickup. `line_id` is the line's own selector and is always set: send it in `line_ids` to hand over only this line. Of `prescription_id` / `pos_sale_item_id` exactly one is set: a full-edition in-house pharmacy's pickup lines carry `prescription_id` (and then `line_id` equals it); a Pharmacy-edition till sale's pickup lines carry `pos_sale_item_id` instead (the sale's own line) and `prescription_id` is null. A till line's `line_id` is NOT a prescription id and matches nothing in the prescriptions API. */
         PickupLine: {
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description The selector for this line: what `line_ids` accepts on the collection request. For a prescription line it equals `prescription_id`; for a till line it is the line's own id.
+             */
+            line_id: string;
+            /**
+             * Format: uuid
+             * @description The prescription this line hands over; null for a till line.
+             */
             prescription_id?: string | null;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @description The till sale's own line; null for a prescription line.
+             */
             pos_sale_item_id?: string | null;
         };
         /** @description One prescription-pickup handover. Signatures are never returned — `has_signature` only. `agent_name` is never shown to an organization connection (only `agent_relationship` is). `pos_sale_id` is set, and `lines` carry `pos_sale_item_id` instead of `prescription_id`, for a Pharmacy-edition till sale's pickup; otherwise both are null. */
@@ -4691,6 +4704,7 @@ export interface components {
             /** @enum {string|null} */
             counselling?: "accepted" | "declined" | null;
             answers?: components["schemas"]["PickupAnswer"][];
+            /** @description Whether a signature image is on file. A collected pickup can be unsigned (`false`) when the clinic has switched off its Require a signature setting and the handover was sent without one; the image itself is never returned either way. */
             has_signature?: boolean;
             privacy_acknowledged_version?: number | null;
             lines?: components["schemas"]["PickupLine"][];
@@ -4712,7 +4726,7 @@ export interface components {
             /** Format: date-time */
             updated_at?: string;
         };
-        /** @description A collection, submitted for clinician review — it never writes the pickup directly. `signature_data` is required: the clinic's single write path cannot mark a pickup collected without one. Send the image your own kiosk captured. */
+        /** @description A collection, submitted for clinician review — it never writes the pickup directly. `signature_data` follows the clinic's own **Require a signature at pickup** setting, which the server reads: when the clinic requires a signature, a request without one is refused with `400 signature_required`; when the clinic has switched it off, `signature_data` may be omitted and the pickup is recorded unsigned (`has_signature: false`). A signature you do send is always checked (PNG data URL, under 64 KB). To hand over only some lines, list their `line_id` values in `line_ids`; the lines left behind stay on a new awaiting pickup. */
         PickupCollectionCreate: {
             /** @enum {string} */
             collected_by: "patient" | "agent";
@@ -4724,9 +4738,9 @@ export interface components {
             counselling: "accepted" | "declined";
             /** @description Only `id` and `answer` are read back; send the clinic's own question ids. */
             answers?: components["schemas"]["PickupAnswer"][];
-            /** @description A PNG data URL, under 64 KB. */
-            signature_data: string;
-            /** @description Prescription ids to hand over, for a partial pickup. Omit to hand over every line. */
+            /** @description A PNG data URL, under 64 KB: the image your own kiosk captured. Required when the clinic's Require a signature at pickup setting is on (otherwise `400 signature_required`); optional when it is off, in which case the pickup is recorded unsigned. If it is on when a clinician later accepts the request and none was sent, the acceptance is refused and the request stays pending for the clinic. */
+            signature_data?: string;
+            /** @description The `line_id` of each line to hand over, for a partial pickup, from the pickup's `lines`. For a prescription line that is its prescription id, so requests written against earlier versions keep working; for a Pharmacy-edition till line it is the line's own id (its `pos_sale_item_id` is not accepted here). Every id must be a line of this pickup, otherwise the request is refused with `invalid_request`. Omit to hand over every line. At least one when present. */
             line_ids?: string[];
             /** @description Present only when the clinic's privacy notice is due (GET the pickup first to check). */
             privacy_ack?: Record<string, never>;
